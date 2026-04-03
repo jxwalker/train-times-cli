@@ -240,6 +240,7 @@ def journey(
         table.add_column("Arr")
         table.add_column("Dur")
     else:
+        table = Table(title=f"Timetable: {start} -> {dest}")
         table.add_column("Departs", style="cyan")
         table.add_column("Arrives", style="blue")
         table.add_column("Duration", style="magenta")
