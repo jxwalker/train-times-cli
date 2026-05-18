@@ -87,9 +87,9 @@ def live(
     
     with get_status(f"[bold blue]Fetching live departures from {start}..."):
         if dest:
-            url = f"https://huxley2.azurewebsites.net/departures/{start}/to/{dest}?expand=true"
+            url = f"https://hux.azurewebsites.net/departures/{start}/to/{dest}?expand=true"
         else:
-            url = f"https://huxley2.azurewebsites.net/departures/{start}?expand=true"
+            url = f"https://hux.azurewebsites.net/departures/{start}?expand=true"
             
         try:
             resp = requests.get(url, timeout=10)
