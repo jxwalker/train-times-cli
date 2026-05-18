@@ -12,6 +12,13 @@ import contextlib
 
 app = typer.Typer(help="UK Train Times and London Underground CLI")
 
+# Huxley2 is a community JSON proxy for the National Rail Darwin SOAP API.
+# `hux.azurewebsites.net` is the maintainer's alternate instance; the original
+# `huxley2.azurewebsites.net` started returning 500s in May 2026 (looks like
+# its Darwin access token expired). If hux falls over too, try huxley2 again
+# or self-host: https://github.com/jpsingleton/Huxley2
+HUXLEY_BASE = "https://hux.azurewebsites.net"
+
 is_piped = not sys.stdout.isatty()
 if is_piped:
     console = Console(width=32, force_terminal=False)
@@ -87,19 +94,53 @@ def live(
     
     with get_status(f"[bold blue]Fetching live departures from {start}..."):
         if dest:
-            url = f"https://hux.azurewebsites.net/departures/{start}/to/{dest}?expand=true"
+            url = f"{HUXLEY_BASE}/departures/{start}/to/{dest}?expand=true"
         else:
-            url = f"https://hux.azurewebsites.net/departures/{start}?expand=true"
-            
+            url = f"{HUXLEY_BASE}/departures/{start}?expand=true"
+
         try:
             resp = requests.get(url, timeout=10)
-            if resp.status_code == 400:
-                console.print(f"[bold red]Invalid station code: {resp.text}[/bold red]")
-                raise typer.Exit(1)
+        except requests.exceptions.Timeout:
+            console.print(
+                "[bold red]The departures service didn't respond in time (10s timeout).[/bold red]\n"
+                "Check your connection and try again."
+            )
+            raise typer.Exit(1)
+        except requests.exceptions.ConnectionError:
+            console.print(
+                f"[bold red]Couldn't reach {HUXLEY_BASE}.[/bold red]\n"
+                "The service may be down, or you may be offline."
+            )
+            raise typer.Exit(1)
+        except requests.exceptions.RequestException as e:
+            console.print(f"[bold red]Network error fetching departures: {e}[/bold red]")
+            raise typer.Exit(1)
+
+        if resp.status_code == 400:
+            console.print(f"[bold red]Invalid station code: {resp.text}[/bold red]")
+            raise typer.Exit(1)
+        if 500 <= resp.status_code < 600:
+            station_hint = (
+                f"\n• Check {start}" + (f" and {dest}" if dest else "") +
+                " — Huxley returns 500 for unknown CRS codes."
+            )
+            console.print(
+                f"[bold red]Huxley returned HTTP {resp.status_code}.[/bold red]"
+                f"{station_hint}\n"
+                f"• Or the upstream service may be down — try again, or switch HUXLEY_BASE "
+                f"in train_cli.py between hux.azurewebsites.net and huxley2.azurewebsites.net.\n"
+                f"  Status: https://github.com/jpsingleton/Huxley2"
+            )
+            raise typer.Exit(1)
+
+        try:
             resp.raise_for_status()
             data = resp.json()
-        except Exception as e:
-            console.print(f"[bold red]Failed to fetch departures: {e}[/bold red]")
+        except requests.exceptions.HTTPError as e:
+            console.print(f"[bold red]HTTP error fetching departures: {e}[/bold red]")
+            raise typer.Exit(1)
+        except ValueError:
+            console.print("[bold red]Unexpected response from departures service (not JSON).[/bold red]")
             raise typer.Exit(1)
 
     services = data.get("trainServices", [])
